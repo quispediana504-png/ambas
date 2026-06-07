@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GymControl AI & QR Scanner</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <style>
+        .qr-element img { margin: 0 auto; }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen font-sans">
+
+    <nav class="bg-gray-800 border-b border-gray-700 p-4 sticky top-0 z-50 shadow-md">
+        <div class="container mx-auto flex flex-col sm:flex-row justify-between items-center gap-4">
+            <h1 class="text-2xl font-bold tracking-wider text-emerald-400 flex items-center gap-2">
+                🏋️‍♂️ GymControl <span class="text-xs bg-emerald-500 text-gray-950 px-2 py-0.5 rounded-full font-mono">AI v1.0</span>
+            </h1>
+            <div class="flex flex-wrap gap-2">
+                <button onclick="abrirModalRegistro()" class="bg-emerald-500 hover:bg-emerald-600 text-gray-950 font-semibold px-4 py-2 rounded-lg transition-all flex items-center gap-1 shadow-lg shadow-emerald-500/20 cursor-pointer">
+                    ➕ Nuevo Miembro
+                </button>
+                <button onclick="exportarBackup()" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-4 py-2 rounded-lg transition-all flex items-center gap-1 cursor-pointer">
+                    💾 Exportar Backup (.js)
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <main class="container mx-auto p-4 grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
+        <div class="lg:col-span-1 space-y-6">
+            <div class="bg-gray-800 p-5 rounded-2xl border border-gray-700 shadow-xl">
+                <h2 class="text-lg font-bold text-emerald-400 mb-3 flex items-center gap-2">
+                    📷 Escáner de Acceso QR
+                </h2>
+                <p class="text-xs text-gray-400 mb-4">Activa la cámara para registrar el acceso de los miembros mediante su código QR.</p>
+                
+                <div id="reader" class="bg-gray-950 rounded-xl overflow-hidden border border-gray-800" style="width: 100%;"></div>
+                
+                <div class="mt-4 flex gap-2">
+                    <button onclick="iniciarEscaneo()" class="w-full bg-gray-700 hover:bg-gray-600 text-white py-2 rounded-lg font-medium transition cursor-pointer">
+                        Encender Cámara
+                    </button>
+                    <button onclick="detenerEscaneo()" class="w-full bg-red-900/40 hover:bg-red-900/60 text-red-300 py-2 rounded-lg font-medium transition border border-red-800/60 cursor-pointer">
+                        Apagar
+                    </button>
+                </div>
+            </div>
+
+            <div class="bg-gray-800 p-5 rounded-2xl border border-gray-700 shadow-xl">
+                <div class="flex justify-between items-center mb-3">
+                    <h2 class="text-lg font-bold text-blue-400 flex items-center gap-2">
+                        📋 Accesos en Vivo
+                    </h2>
+                    <span id="contador-asistencias" class="text-xs bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded border border-blue-500/30 font-mono">0 hoy</span>
+                </div>
+                <div id="lista-asistencias" class="space-y-2 max-h-60 overflow-y-auto pr-1 text-sm">
+                    <p class="text-gray-500 text-center py-4 italic">Esperando lecturas de código...</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="lg:col-span-2 space-y-6">
+            <div class="bg-gray-800 p-5 rounded-2xl border border-gray-700 shadow-xl">
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
+                    <h2 class="text-xl font-bold text-gray-100">Miembros Activos</h2>
+                    <input type="text" id="buscador" oninput="renderizarMiembros()" placeholder="Buscar por nombre o ID..." class="bg-gray-950 border border-gray-700 rounded-lg px-4 py-2 text-sm w-full sm:w-64 focus:outline-none focus:border-emerald-500">
+                </div>
+
+                <div class="overflow-x-auto rounded-xl border border-gray-700">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-gray-950/60 text-gray-400 text-xs uppercase font-mono border-b border-gray-700">
+                                <th class="p-3">Miembro</th>
+                                <th class="p-3">Físico (Métricas)</th>
+                                <th class="p-3">Objetivo / Alergias</th>
+                                <th class="p-3 text-center">QR</th>
+                                <th class="p-3 text-right">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tabla-miembros" class="divide-y divide-gray-700/50 text-sm">
+                            </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <div id="modal-qr-container" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4" onclick="cerrarModalQR()">
+        <div class="bg-gray-800 p-6 rounded-2xl max-w-sm w-full text-center border border-gray-700" onclick="event.stopPropagation()">
+            <h3 id="modal-qr-titulo" class="text-lg font-bold text-emerald-400 mb-2">Código de Acceso</h3>
+            <p id="modal-qr-subtitulo" class="text-xs text-gray-400 mb-4"></p>
+            <div id="modal-qr-target" class="bg-white p-4 rounded-xl inline-block shadow-inner"></div>
+            <button onclick="cerrarModalQR()" class="mt-5 w-full bg-gray-700 hover:bg-gray-600 py-2 rounded-lg font-medium transition cursor-pointer">Cerrar Ventana</button>
+        </div>
+    </div>
+
+    <script>
+        // --- BASE DE DATOS INICIAL (20 REGISTROS SOLICITADOS) ---
+        let miembros = [
+            { id: "GYM-1001", nombre: "Juan Pérez", objetivo: "Hipertrofia", peso: 78, altura: 1.75, alergias: "Ninguna" },
+            { id: "GYM-1002", nombre: "María Rodriguez", objetivo: "Pérdida de Peso", peso: 65, altura: 1.62, alergias: "Acaros" },
+            { id: "GYM-1003", nombre: "Carlos Mendoza", objetivo: "Fuerza", peso: 90, altura: 1.80, alergias: "Penicilina" },
+            { id: "GYM-1004", nombre: "Ana Gómez", objetivo: "Resistencia", peso: 55, altura: 1.68, alergias: "Ninguna" },
+            { id: "GYM-1005", nombre: "Luis Martínez", objetivo: "Hipertrofia", peso: 82, altura: 1.78, alergias: "Maní" },
+            { id: "GYM-1006", nombre: "Elena Flores", objetivo: "Pérdida de Peso", peso: 74, altura: 1.60, alergias: "Ninguna" },
+            { id: "GYM-1007", nombre: "Javier Soto", objetivo: "Fuerza", peso: 95, altura: 1.85, alergias: "Mariscos" },
+            { id: "GYM-1008", nombre: "Sofia Castro", objetivo: "Resistencia", peso: 60, altura: 1.70, alergias: "Ninguna" },
+            { id: "GYM-1009", nombre: "Diego Diaz", objetivo: "Hipertrofia", peso: 70, altura: 1.72, alergias: "Lactosa" },
+            { id: "GYM-1010", nombre: "Lucia Silva", objetivo: "Pérdida de Peso", peso: 68, altura: 1.65, alergias: "Ninguna" },
+            { id: "GYM-1011", nombre: "Pedro Morales", objetivo: "Fuerza", peso: 88, altura: 1.79, alergias: "Ninguna" },
+            { id: "GYM-1012", nombre: "Laura Espinoza", objetivo: "Resistencia", peso: 58, altura: 1.63, alergias: "Polen" },
+            { id: "GYM-1013", nombre: "Miguel Benitez", objetivo: "Hipertrofia", peso: 80, altura: 1.76, alergias: "Ninguna" },
+            { id: "GYM-1014", nombre: "Camila Ortiz", objetivo: "Pérdida de Peso", peso: 85, altura: 1.69, alergias: "Gluten" },
+            { id: "GYM-1015", nombre: "Andrés Vega", objetivo: "Fuerza", peso: 102, altura: 1.88, alergias: "Ninguna" },
+            { id: "GYM-1016", nombre: "Paula Herrera", objetivo: "Resistencia", peso: 52, altura: 1.59, alergias: "Ninguna" },
+            { id: "GYM-1017", nombre: "Gabriel Rojas", objetivo: "Hipertrofia", peso: 75, altura: 1.74, alergias: "Nueces" },
+            { id: "GYM-1018", nombre: "Valentina Paz", objetivo: "Pérdida de Peso", peso: 61, altura: 1.66, alergias: "Ninguna" },
+            { id: "GYM-1019", nombre: "Ricardo Torres", objetivo: "Fuerza", peso: 91, altura: 1.81, alergias: "Ninguna" },
+            { id: "GYM-1020", nombre: "Natalia Fuentes", objetivo: "Resistencia", peso: 56, altura: 1.64, alergias: "Ninguna" }
+        ];
+
+        let asistencias = [];
+        let html5QrcodeScanner = null;
+
+        // --- MOTOR DE IA PREDICTIVA SIMULADA EN SEGUNDO PLANO ---
+        function ejecutarIAPredictiva(miembro) {
+            const imc = (miembro.peso / (miembro.altura * miembro.altura)).toFixed(1);
+            let recomendacion = "";
+            let riesgo = "Ninguno detectado comercialmente.";
+
+            // Filtro estructural de alergias críticas
+            if(miembro.alergias.toLowerCase().includes("maní") || miembro.alergias.toLowerCase().includes("nueces")) {
+                riesgo = "Evitar suplementación con proteínas de origen vegetal sin certificación.";
+            } else if(miembro.alergias.toLowerCase().includes("lactosa")) {
+                riesgo = "Usar exclusivamente proteína Isolate (Aislada de suero) o vegana.";
+            }
+
+            // Reglas predictivas de entrenamiento según perfil metabólico simulado
+            switch(miembro.objetivo) {
+                case "Hipertrofia":
+                    recomendacion = imc < 22 
+                        ? "Enfoque en superávit calórico (Bulk limpio). Bloques de fuerza hipertrofia 4x8 con cargas al 75% RM. Enfoque multiarticular."
+                        : "Hipertrofia en normocaloría. Volumen de trabajo moderado (12-16 series semanales por grupo muscular), RPE 8-9.";
+                    break;
+                case "Pérdida de Peso":
+                    recomendacion = imc > 27
+                        ? "Déficit calórico controlado del 20%. Entrenamiento de fuerza obligatorio para preservar masa magra + Cardio LISS post-entreno."
+                        : "Optimización de composición corporal. Circuitos de alta densidad metabólica combinados con cargas estructurales pesadas.";
+                    break;
+                case "Fuerza":
+                    recomendacion = "Periodización ondulatoria basada en Powerlifting (5x5, 3x3). Descansos completos (3 min). Suplementación con Creatina sugerida.";
+                    break;
+                case "Resistencia":
+                    recomendacion = "Bloques de acondicionamiento metabólico continuo, cargas al 50-60% con rangos de 15-20 repeticiones y reducción de tiempos de descanso.";
+                    break;
+            }
+
+            return { imc, recomendacion, riesgo };
+        }
+
+        // --- RENDERIZACIÓN DE LA TABLA ---
+        function renderizarMiembros() {
+            const tabla = document.getElementById("tabla-miembros");
+            const buscador = document.getElementById("buscador").value.toLowerCase();
+            tabla.innerHTML = "";
+
+            const filtrados = miembros.filter(m => 
+                m.nombre.toLowerCase().includes(buscador) || m.id.toLowerCase().includes(buscador)
+            );
+
+            filtrados.forEach(m => {
+                const analisisIA = ejecutarIAPredictiva(m);
+                const tr = document.createElement("tr");
+                tr.className = "hover:bg-gray-800/40 transition";
+                tr.innerHTML = `
+                    <td class="p-3">
+                        <div class="font-bold text-gray-200">${m.nombre}</div>
+                        <div class="text-xs font-mono text-emerald-400">${m.id}</div>
+                    </td>
+                    <td class="p-3">
+                        <div class="text-gray-300 font-medium">${m.peso} kg / ${m.altura} m</div>
+                        <div class="text-xs text-gray-400">IMC: <span class="font-bold font-mono">${analisisIA.imc}</span></div>
+                    </td>
+                    <td class="p-3 max-w-xs">
+                        <span class="inline-block bg-emerald-500/10 text-emerald-400 text-xs px-2 py-0.5 rounded-full font-semibold border border-emerald-500/20 mb-1">${m.objetivo}</span>
+                        <div class="text-xs text-gray-400 truncate" title="Alergias: ${m.alergias}">⚠️ Alergias: <span class="text-gray-300">${m.alergias}</span></div>
+                        <div class="text-[11px] text-blue-400 mt-1 italic border-l border-blue-500/30 pl-2 leading-tight">${analisisIA.recomendacion}</div>
+                    </td>
+                    <td class="p-3 text-center">
+                        <button onclick="verQR('${m.id}', '${m.nombre}')" class="text-2xl hover:scale-110 transition inline-block cursor-pointer" title="Ver Código QR">
+                            🔲
+                        </button>
+                    </td>
+                    <td class="p-3 text-right space-x-1 whitespace-nowrap">
+                        <button onclick="editarMiembro('${m.id}')" class="bg-gray-700 hover:bg-gray-600 text-gray-200 p-1.5 rounded text-xs transition cursor-pointer" title="Editar">✏️</button>
+                        <button onclick="eliminarMiembro('${m.id}')" class="bg-red-950/60 hover:bg-red-900 border border-red-800 text-red-200 p-1.5 rounded text-xs transition cursor-pointer" title="Eliminar">🗑️</button>
+                    </td>
+                `;
+                tabla.appendChild(tr);
+            });
+        }
+
+        // --- GESTIÓN DE ACCIONES (SWEETALERT2 INTERACTIVOS) ---
+        function abrirModalRegistro() {
+            Swal.fire({
+                title: '<span class="text-emerald-400 font-bold">Inscribir Nuevo Atleta</span>',
+                background: '#1f2937',
+                color: '#f3f4f6',
+                html: `
+                    <input id="swal-nombre" class="swal2-input bg-gray-950 border border-gray-700 rounded text-white" placeholder="Nombre completo">
+                    <select id="swal-objetivo" class="swal2-input bg-gray-950 border border-gray-700 rounded text-white">
+                        <option value="Hipertrofia">Hipertrofia</option>
+                        <option value="Pérdida de Peso">Pérdida de Peso</option>
+                        <option value="Fuerza">Fuerza</option>
+                        <option value="Resistencia">Resistencia</option>
+                    </select>
+                    <input id="swal-peso" type="number" class="swal2-input bg-gray-950 border border-gray-700 rounded text-white" placeholder="Peso (kg)">
+                    <input id="swal-altura" type="number" step="0.01" class="swal2-input bg-gray-950 border border-gray-700 rounded text-white" placeholder="Altura (m)">
+                    <input id="swal-alergias" class="swal2-input bg-gray-950 border border-gray-700 rounded text-white" placeholder="Alergias o patologías (o Ninguna)">
+                `,
+                focusConfirm: false,
+                confirmButtonColor: '#10b981',
+                confirmButtonText: 'Dar de Alta',
+                showCancelButton: true,
+                cancelButtonText: 'Cancelar',
+                cancelButtonColor: '#374151',
+                preConfirm: () => {
+                    const nombre = document.getElementById('swal-nombre').value;
+                    const objetivo = document.getElementById('swal-objetivo').value;
+                    const peso = parseFloat(document.getElementById('swal-peso').value);
+                    const altura = parseFloat(document.getElementById('swal-altura').value);
+                    const alergias = document.getElementById('swal-alergias').value || "Ninguna";
+
+                    if (!nombre || !peso || !altura) {
+                        Swal.showValidationMessage('Por favor completa todos los campos estructurales');
+                        return false;
+                    }
+                    return { nombre, objetivo, peso, altura, alergias };
+                }
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    const nuevoId = `GYM-${Date.now().toString().slice(-4)}`;
+                    const nuevoMiembro = { id: nuevoId, ...result.value };
+                    miembros.unshift(nuevoMiembro); // Añadir al inicio
+                    renderizarMiembros();
+                    
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Miembro Registrado',
+                        text: `Código generado con éxito: ${nuevoId}`,
+                        background: '#1f2937',
+                        confirmButtonColor: '#10b981'
+                    }).then(() => {
+                        verQR(nuevoId, nuevoMiembro.nombre);
+                    });
+                }
+            });
+        }
+
+        function editarMiembro(id) {
+            const m = miembros.find(item => item.id === id);
+            if (!m) return;
+
+            Swal.fire({
+                title: '<span class="text-blue-400 font-bold">Modificar Ficha de Miembro</span>',
+                background: '#1f2937',
+                color: '#f3f4f6',
+                html: `
+                    <label class="text-xs text-left block text-gray-400 px-10">Nombre:</label>
+                    <input id="swal-nombre" class="swal2-input bg-gray-950 border-gray-700 text-white mt-1" value="${m.nombre}">
+                    <label class="text-xs text-left block text-gray-400 px-10 mt-2">Objetivo:</label>
+                    <select id="swal-objetivo" class="swal2-input bg-gray-950 border-gray-700 text-white mt-1">
+                        <option value="Hipertrofia" ${m.objetivo === 'Hipertrofia' ? 'selected' : ''}>Hipertrofia</option>
+                        <option value="Pérdida de Peso" ${m.objetivo === 'Pérdida de Peso' ? 'selected' : ''}>Pérdida de Peso</option>
+                        <option value="Fuerza" ${m.objetivo === 'Fuerza' ? 'selected' : ''}>Fuerza</option>
+                        <option value="Resistencia" ${m.objetivo === 'Resistencia' ? 'selected' : ''}>Resistencia</option>
+                    </select>
+                    <label class="text-xs text-left block text-gray-400 px-10 mt-2">Peso (kg):</label>
+                    <input id="swal-peso" type="number" class="swal2-input bg-gray-950 border-gray-700 text-white mt-1" value="${m.peso}">
+                    <label class="text-xs text-left block text-gray-400 px-10 mt-2">Altura (m):</label>
+                    <input id="swal-altura" type="number" step="0.01" class="swal2-input bg-gray-950 border-gray-700 text-white mt-1" value="${m.altura}">
+                    <label class="text-xs text-left block text-gray-400 px-10 mt-2">Alergias:</label>
+                    <input id="swal-alergias" class="swal2-input bg-gray-950 border-gray-700 text-white mt-1" value="${m.alergias}">
+                `,
+                focusConfirm: false,
+                confirmButtonColor: '#3b82f6',
+                confirmButtonText: 'Actualizar',
+                showCancelButton: true,
+                cancelButtonColor: '#374151',
+                preConfirm: () => {
+                    return {
+                        nombre: document.getElementById('swal-nombre').value,
+                        objetivo: document.getElementById('swal-objetivo').value,
+                        peso: parseFloat(document.getElementById('swal-peso').value),
+                        altura: parseFloat(document.getElementById('swal-altura').value),
+                        alergias: document.getElementById('swal-alergias').value
+                    };
+                }
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    Object.assign(m, result.value);
+                    renderizarMiembros();
+                    Swal.fire({ icon: 'success', title: 'Cambios aplicados', background: '#1f2937', confirmButtonColor: '#3b82f6' });
+                }
+            });
+        }
+
+        function eliminarMiembro(id) {
+            Swal.fire({
+                title: '¿Remover permanentemente?',
+                text: "Esta acción no se puede revertir del sistema en ejecución.",
+                icon: 'warning',
+                background: '#1f2937',
+                color: '#f3f4f6',
+                showCancelButton: true,
+                confirmButtonColor: '#ef4444',
+                cancelButtonColor: '#374151',
+                confirmButtonText: 'Sí, eliminar',
+                cancelButtonText: 'Cancelar'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    miembros = miembros.filter(m => m.id !== id);
+                    renderizarMiembros();
+                    Swal.fire({ icon: 'success', title: 'Eliminado', background: '#1f2937', confirmButtonColor: '#10b981' });
+                }
+            });
+        }
+
+        // --- SISTEMA DE VISUALIZACIÓN QR (MODAL INTERNO) ---
+        function verQR(id, nombre) {
+            const container = document.getElementById('modal-qr-container');
+            const target = document.getElementById('modal-qr-target');
+            document.getElementById('modal-qr-titulo').innerText = nombre;
+            document.getElementById('modal-qr-subtitulo').innerText = `ID Único: ${id}`;
+            
+            target.innerHTML = ""; // Limpiar QR anterior
+            container.classList.remove('hidden');
+
+            new QRCode(target, {
+                text: id,
+                width: 180,
+                height: 180,
+                colorDark: "#000000",
+                colorLight: "#ffffff",
+                correctLevel: QRCode.CorrectLevel.H
+            });
+        }
+
+        function cerrarModalQR() {
+            document.getElementById('modal-qr-container').classList.add('hidden');
+        }
+
+        // --- MÓDULO DE ESCANEO DE CÁMARA & CONTROL DE ASISTENCIA ---
+        function iniciarEscaneo() {
+            detenerEscaneo(); // Evitar duplicidad de hilos de cámara
+            
+            html5QrcodeScanner = new Html5Qrcode("reader");
+            html5QrcodeScanner.start(
+                { facingMode: "environment" }, // Cámara trasera si está disponible
+                {
+                    fps: 10,
+                    qrbox: { width: 250, height: 250 }
+                },
+                (decodedText) => {
+                    // Acción al leer código QR exitosamente
+                    procesarMarcajeAsistencia(decodedText.trim());
+                },
+                (errorMessage) => {
+                    // Modo pasivo: No saturar consola con errores de escaneo de fotogramas vacíos
+                }
+            ).catch((err) => {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Error de Cámara',
+                    text: 'No se pudo acceder a la cámara. Asegúrate de dar los permisos requeridos.',
+                    background: '#1f2937',
+                    confirmButtonColor: '#ef4444'
+                });
+            });
+        }
+
+        function detenerEscaneo() {
+            if (html5QrcodeScanner) {
+                html5QrcodeScanner.stop().then(() => {
+                    document.getElementById("reader").innerHTML = "";
+                }).catch(err => console.log("Cámara ya apagada o no inicializada."));
+            }
+        }
+
+        function procesarMarcajeAsistencia(idMiembro) {
+            const miembro = miembros.find(m => m.id === idMiembro);
+            const lista = document.getElementById("lista-asistencias");
+            const hora = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+            // Remover el placeholder de la lista si está presente
+            if(asistencias.length === 0) lista.innerHTML = "";
+
+            if (miembro) {
+                // Validación para evitar spam de accesos en el mismo segundo
+                if(asistencias.length > 0 && asistencias[0].id === idMiembro && (Date.now() - asistencias[0].timestamp < 5000)) {
+                    return; // Ignorar lecturas repetidas antes de 5 segundos
+                }
+
+                // Guardar registro
+                asistencias.unshift({ id: idMiembro, nombre: miembro.nombre, hora, timestamp: Date.now() });
+                
+                // Efecto de sonido visual o alerta rápida en la lista
+                const div = document.createElement("div");
+                div.className = "bg-emerald-950/40 border border-emerald-800/60 p-2 rounded-lg flex justify-between items-center animate-pulse";
+                div.innerHTML = `
+                    <div>
+                        <span class="font-bold text-emerald-400">${miembro.nombre}</span>
+                        <div class="text-[11px] text-gray-400">Objetivo: ${miembro.objetivo}</div>
+                    </div>
+                    <span class="font-mono text-xs text-emerald-300 font-bold bg-emerald-900/50 px-2 py-1 rounded">${hora}</span>
+                `;
+                lista.insertBefore(div, lista.firstChild);
+                
+                // Mostrar alerta no intrusiva de bienvenida personalizada
+                Swal.fire({
+                    toast: true,
+                    position: 'top-end',
+                    icon: 'success',
+                    title: `¡Bienvenido, ${miembro.nombre}!`,
+                    text: `IA sugiere: ${miembro.objetivo}`,
+                    showConfirmButton: false,
+                    timer: 3000,
+                    background: '#111827',
+                    color: '#10b981'
+                });
+
+            } else {
+                // Alerta si el código leído no está en el core de miembros del gimnasio
+                const div = document.createElement("div");
+                div.className = "bg-red-950/40 border border-red-800/60 p-2 rounded-lg flex justify-between items-center";
+                div.innerHTML = `
+                    <div>
+                        <span class="font-bold text-red-400 text-xs">CÓDIGO NO REGISTRADO</span>
+                        <div class="text-[11px] text-gray-500 font-mono">${idMiembro}</div>
+                    </div>
+                    <span class="font-mono text-xs text-red-400">${hora}</span>
+                `;
+                lista.insertBefore(div, lista.firstChild);
+            }
+
+            // Actualizar contador
+            document.getElementById("contador-asistencias").innerText = `${asistencias.length} hoy`;
+        }
+
+        // --- MÓDULO DE COPIA DE SEGURIDAD EXPORTABLE (.JS) ---
+        function exportarBackup() {
+            const dataStr = "data:text/javascript;charset=utf-8," + encodeURIComponent(
+                `// BACKUP DE DATOS - GYMCONTROL AI\nconst datosGymBackup = ${JSON.stringify(miembros, null, 4)};\nconsole.log('Backup cargado correctamente.', datosGymBackup);`
+            );
+            const downloadAnchor = document.createElement('a');
+            downloadAnchor.setAttribute("href", dataStr);
+            downloadAnchor.setAttribute("download", `gym_backup_${new Date().toISOString().slice(0,10)}.js`);
+            document.body.appendChild(downloadAnchor);
+            downloadAnchor.click();
+            downloadAnchor.remove();
+
+            Swal.fire({
+                icon: 'success',
+                title: 'Copia Descargada',
+                text: 'Se ha generado un archivo .js estructurado con los datos actuales.',
+                background: '#1f2937',
+                confirmButtonColor: '#3b82f6'
+            });
+        }
+
+        // --- ARRANQUE INICIAL ---
+        window.onload = () => {
+            renderizarMiembros();
+        };
+    </script>
+</body>
+</html>
